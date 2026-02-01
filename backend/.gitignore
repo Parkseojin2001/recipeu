@@ -1,0 +1,5 @@
+backend/.env
+backend/.env.*
+.env
+env
+.DS_Store
