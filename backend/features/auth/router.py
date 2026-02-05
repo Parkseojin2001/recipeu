@@ -79,17 +79,14 @@ async def naver_callback(code: str = Query(...), state: str = Query(...),
 
     naver = profile_json["response"]
 
-    # 3. DB upsert용 데이터 매핑
+    # 3. DB upsert용 데이터 매핑 (새 스키마: id, naver_id, email, nickname, birthday, mem_photo, mem_type, to_cnt, first_visit, last_visit, member_del)
     member_data = {
         "naver_id": naver.get("id", ""),
         "email": naver.get("email", ""),
-        "name": naver.get("name", ""),
         "nickname": naver.get("nickname", ""),
-        "mem_photo": naver.get("profile_image", ""),
-        "gender": naver.get("gender", "U"),
         "birthday": naver.get("birthday", ""),
-        "age": naver.get("age", ""),
-        "birth_year": int(naver.get("birthyear", 0) or 0),
+        "mem_photo": naver.get("profile_image", ""),
+        "mem_type": "NAVER",
     }
 
     # 4. member 테이블 upsert

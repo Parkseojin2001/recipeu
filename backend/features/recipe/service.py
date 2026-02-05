@@ -3,6 +3,8 @@
 Recipe 비즈니스 로직
 """
 import os
+import json
+import re
 from pymongo import MongoClient
 from typing import List, Dict, Any
 from .prompts import RECIPE_QUERY_EXTRACTION_PROMPT, RECIPE_GENERATION_PROMPT
@@ -295,8 +297,6 @@ class RecipeService:
             response_text = result.content.strip()
             
             # JSON 추출
-            import json
-            import re
             
             # 마크다운 코드 블록 제거
             response_text = re.sub(r'```json\s*|\s*```', '', response_text)

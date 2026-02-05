@@ -263,11 +263,24 @@ async def save_recipe_to_mypage(
 ):
     """요리 완료 후 마이레시피에 저장 (generate_id, session_id 연결)"""
     try:
-        # member_id 추출 (숫자면 사용, 아니면 0)
-        member_id = 0
-        mid = request.get("member_id")
-        if mid and str(mid).isdigit():
-            member_id = int(mid)
+        print(f"[Recipe API] 마이레시피 저장 요청 수신: {request}")
+        # user_id 추출 (프론트엔드는 user_id로 전송)
+        user_id = request.get("user_id")
+        
+        # 게스트(user_id=0 또는 None)는 저장 불가
+        if not user_id or user_id == 0:
+            raise HTTPException(
+                status_code=400, 
+                detail="로그인이 필요한 기능입니다. 게스트는 레시피를 저장할 수 없습니다."
+            )
+        
+        # member_id로 변환
+        member_id = int(user_id) if str(user_id).isdigit() else 0
+        if member_id == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="유효하지 않은 사용자 ID입니다."
+            )
 
         # generate_id, session_id 추출
         generate_id = request.get("generate_id")
@@ -283,27 +296,49 @@ async def save_recipe_to_mypage(
             session_id = None
 
         recipe = request.get("recipe", {})
+
+        # name → title 변환 (프론트엔드 호환성)
+        recipe_title = recipe.get("title") or recipe.get("name", "마이레시피")
+
+        # 재료와 레시피 단계 추출
+        ingredients = recipe.get("ingredients", [])
+        steps = recipe.get("steps", [])
+
+        print(f"[Recipe API] 저장할 레시피: {recipe_title}")
+        print(f"[Recipe API] ingredients 개수: {len(ingredients)}, 내용: {ingredients[:2] if ingredients else '없음'}...")
+        print(f"[Recipe API] steps 개수: {len(steps)}, 내용: {steps[:2] if steps else '없음'}...")
+
+        if not ingredients:
+            print(f"[Recipe API] 경고: ingredients가 비어있습니다!")
+        if not steps:
+            print(f"[Recipe API] 경고: steps가 비어있습니다!")
+
         result = save_my_recipe(
             member_id=member_id,
-            recipe_name=recipe.get("title", "마이레시피"),
-            ingredients=recipe.get("ingredients", []),
-            steps=recipe.get("steps", []),
+            recipe_name=recipe_title,
+            ingredients=ingredients,
+            steps=steps,
             rating=request.get("rating"),
             image_url=recipe.get("image", ""),
             session_id=session_id,
             generate_id=generate_id
         )
 
-        print(f"[Recipe API] 마이레시피 저장: ID={result.get('my_recipe_id')}, generate_id={generate_id}, session_id={session_id}")
+        print(f"[Recipe API] 마이레시피 저장: ID={result.get('my_recipe_id')}, member_id={member_id}, generate_id={generate_id}")
 
         return {
             "success": True,
             "recipe_id": result.get("my_recipe_id"),
             "message": "마이레시피에 저장되었습니다"
         }
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"[Recipe API] 마이레시피 저장 실패: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @router.delete("/{recipe_id}")

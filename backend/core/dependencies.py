@@ -28,7 +28,7 @@ def get_rag_system() -> Optional[RecipeRAGLangChain]:
                 milvus_host=settings.MILVUS_HOST,
                 milvus_port=settings.MILVUS_PORT,
                 collection_name=settings.COLLECTION_NAME,
-                use_reranker=True,
+                use_reranker=settings.USE_RERANKER,
                 temperature=0.01,
                 max_tokens=2000,
             )

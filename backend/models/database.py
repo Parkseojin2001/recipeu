@@ -26,8 +26,15 @@ class RecipeDB:
             constraints_json TEXT,
             rating INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
+        )          
         """)
+
+        # 기존 DB에 rating 컬럼이 없으면 추가
+        cur.execute("PRAGMA table_info(recipes)")
+        columns = {row[1] for row in cur.fetchall()}
+        if "rating" not in columns:
+            cur.execute("ALTER TABLE recipes ADD COLUMN rating INTEGER DEFAULT 0")
+        
         conn.commit()
         conn.close()
 

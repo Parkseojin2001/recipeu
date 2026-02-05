@@ -88,16 +88,10 @@ async def get_family_member_info(family_id: int) -> Dict[str, Any]:
     """특정 가족 구성원 정보 조회 (MySQL)"""
     psnl = get_family_personalization(family_id)
 
-    if not psnl:
-        raise HTTPException(
-            status_code=404,
-            detail=f"가족 구성원 (ID: {family_id})을(를) 찾을 수 없습니다."
-        )
-
     return {
         "id": family_id,
-        "allergies": psnl.get("allergies", []),
-        "dislikes": psnl.get("dislikes", [])
+        "allergies": psnl.get("allergies", []) if psnl else [],
+        "dislikes": psnl.get("dislikes", []) if psnl else []
     }
 
 

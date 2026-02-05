@@ -67,10 +67,13 @@ def init_all_tables():
                 naver_id VARCHAR(100) UNIQUE,
                 email VARCHAR(255),
                 nickname VARCHAR(100),
+                birthday VARCHAR(20),
                 mem_photo VARCHAR(500),
+                mem_type VARCHAR(50) DEFAULT 'NAVER',
                 to_cnt INT DEFAULT 1,
-                frst_visit TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_visit TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                first_visit TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_visit TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                member_del TINYINT DEFAULT 0
             )
         """)
 
@@ -81,7 +84,9 @@ def init_all_tables():
                 member_id INT NOT NULL,
                 relationship VARCHAR(100),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_member_id (member_id)
+                INDEX idx_member_id (member_id),
+                CONSTRAINT fk_family_member FOREIGN KEY (member_id)
+                    REFERENCES member(id) ON DELETE CASCADE ON UPDATE CASCADE
             )
         """)
 
@@ -89,15 +94,19 @@ def init_all_tables():
         cur.execute("""
             CREATE TABLE IF NOT EXISTS personalization (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                member_id INT,
+                member_id INT NOT NULL,
                 family_id INT,
-                scope ENUM('MEMBER', 'FAMILY') DEFAULT 'MEMBER',
+                scope ENUM('MEMBER', 'FAMILY') NOT NULL DEFAULT 'MEMBER',
                 allergies JSON,
                 dislikes JSON,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 INDEX idx_member_id (member_id),
-                INDEX idx_family_id (family_id)
+                INDEX idx_family_id (family_id),
+                CONSTRAINT fk_p_member FOREIGN KEY (member_id)
+                    REFERENCES member(id) ON DELETE CASCADE ON UPDATE CASCADE,
+                CONSTRAINT fk_p_family FOREIGN KEY (family_id)
+                    REFERENCES family(id) ON DELETE CASCADE ON UPDATE CASCADE
             )
         """)
 
@@ -204,7 +213,7 @@ def _serialize_datetime(row: dict) -> dict:
     """datetime 필드를 ISO 문자열로 변환"""
     if not row:
         return row
-    for key in ("frst_visit", "last_visit", "created_at", "updated_at"):
+    for key in ("first_visit", "last_visit", "created_at", "updated_at"):
         if row.get(key):
             row[key] = row[key].isoformat()
     return row
@@ -219,6 +228,7 @@ def upsert_member(profile: dict) -> dict:
     네이버 프로필 기반 회원 upsert.
     - 신규: INSERT + to_cnt=1
     - 기존: to_cnt += 1, last_visit 갱신
+    - 컬럼: id, naver_id, email, nickname, birthday, mem_photo, mem_type, to_cnt, first_visit, last_visit, member_del
     """
     logger.info(f"👤 [member] upsert 시도 - naver_id: {profile.get('naver_id')}, email: {profile.get('email')}")
     with mysql_cursor() as cur:
@@ -232,23 +242,15 @@ def upsert_member(profile: dict) -> dict:
                 UPDATE member
                 SET to_cnt     = to_cnt + 1,
                     last_visit = NOW(),
-                    name       = %s,
                     nickname   = %s,
-                    mem_photo  = %s,
-                    gender     = %s,
                     birthday   = %s,
-                    age        = %s,
-                    birth_year = %s
+                    mem_photo  = %s
                 WHERE naver_id = %s
                 """,
                 (
-                    profile["name"],
                     profile["nickname"],
-                    profile["mem_photo"],
-                    profile["gender"],
                     profile["birthday"],
-                    profile["age"],
-                    profile["birth_year"],
+                    profile["mem_photo"],
                     profile["naver_id"],
                 ),
             )
@@ -259,20 +261,17 @@ def upsert_member(profile: dict) -> dict:
             cur.execute(
                 """
                 INSERT INTO member
-                    (naver_id, email, name, nickname, mem_photo, gender, birthday, age, birth_year, to_cnt)
+                    (naver_id, email, nickname, birthday, mem_photo, mem_type, to_cnt)
                 VALUES
-                    (%s, %s, %s, %s, %s, %s, %s, %s, %s, 1)
+                    (%s, %s, %s, %s, %s, %s, 1)
                 """,
                 (
                     profile["naver_id"],
                     profile["email"],
-                    profile["name"],
                     profile["nickname"],
-                    profile["mem_photo"],
-                    profile["gender"],
                     profile["birthday"],
-                    profile["age"],
-                    profile["birth_year"],
+                    profile["mem_photo"],
+                    profile.get("mem_type", "NAVER"),
                 ),
             )
             cur.execute("SELECT * FROM member WHERE naver_id = %s", (profile["naver_id"],))
@@ -280,7 +279,10 @@ def upsert_member(profile: dict) -> dict:
 
     serialized = _serialize_datetime(row)
     if serialized:
-        upsert_member_personalization(serialized["id"], [], [])
+        # 기존 personalization이 없을 때만 빈 행 생성 (기존 데이터 보호)
+        existing = get_member_personalization(serialized["id"])
+        if not existing:
+            upsert_member_personalization(serialized["id"], [], [])
     return serialized
 
 
@@ -307,7 +309,7 @@ def get_families(member_id: int) -> list:
 
 
 def add_family(member_id: int, relationship: str = "") -> dict:
-    """가족 추가"""
+    """가족 추가 (빈 personalization 행도 함께 생성)"""
     logger.info(f"👨‍👩‍👧 [family] INSERT - member_id: {member_id}, relationship: {relationship}")
     with mysql_cursor() as cur:
         cur.execute(
@@ -316,6 +318,15 @@ def add_family(member_id: int, relationship: str = "") -> dict:
         )
         new_id = cur.lastrowid
         logger.info(f"👨‍👩‍👧 [family] INSERT 완료 - family_id: {new_id}")
+
+        # 빈 personalization 행 생성
+        cur.execute(
+            "INSERT INTO personalization (member_id, family_id, scope, allergies, dislikes) "
+            "VALUES (%s, %s, 'FAMILY', '[]', '[]')",
+            (member_id, new_id),
+        )
+        logger.info(f"🍽️ [personalization] INSERT (empty) - family_id: {new_id}")
+
         cur.execute("SELECT * FROM family WHERE id = %s", (new_id,))
         return cur.fetchone()
 

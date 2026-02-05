@@ -51,8 +51,9 @@ def _t():
 
 def _log_step(label: str, start: float, end: float):
     """단계별 타이밍 로그 출력"""
-    elapsed = (end - start) * 1000  # ms 단위
-    print(f"  ⏱️  [{label}] {elapsed:.0f}ms")
+    elapsed_ms = (end - start) * 1000
+    elapsed_sec = elapsed_ms / 1000
+    print(f"  ⏱️  [{label}] {elapsed_sec:.1f}초")
 
 
 class ClovaStudioReranker:
@@ -196,7 +197,7 @@ class RecipeRAGLangChain:
             )
 
             # Sanity check
-            sanity_docs = self.vectorstore.similarity_search("조리법", k=1, search_params={"ef": 50})
+            sanity_docs = self.vectorstore.similarity_search("조리법", k=1)
             if len(sanity_docs) > 0:
                 print(f"[OK] Milvus 연결 성공 (Collection: {self.collection_name})")
                 print(f"     Sanity check: {sanity_docs[0].metadata.get('title', 'N/A')[:50]}...")
@@ -323,7 +324,7 @@ class RecipeRAGLangChain:
     def search_recipes(
         self,
         query: str,
-        k: int = 5,
+        k: int = 3,
         use_rerank: bool = None
     ) -> List[Dict]:
         """레시피 검색 (with optional CLOVA Studio reranking + image)"""
@@ -332,6 +333,7 @@ class RecipeRAGLangChain:
         t_total_start = _t()
 
         use_rerank = use_rerank if use_rerank is not None else self.use_reranker
+        print(f"\n  📍 [search_recipes] 시작 (k={k}, rerank={use_rerank})")
 
         if use_rerank and self.reranker:
             search_k = min(k * 3, 20)
@@ -339,7 +341,8 @@ class RecipeRAGLangChain:
             # ── 타이밍: Milvus 검색 (embedding 포함) ──
             t_milvus_start = _t()
             docs_with_scores = self._milvus_search(query, search_k)
-            _log_step("Milvus 전체 (embedding+검색)", t_milvus_start, _t())
+            total_end = _t()
+            _log_step("search_recipes 합계", t_total_start, total_end)
             
             docs = [doc for doc, score in docs_with_scores]
             vector_scores = {id(doc): float(score) for doc, score in docs_with_scores}

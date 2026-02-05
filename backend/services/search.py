@@ -181,17 +181,100 @@ class GoogleCustomSearch(WebSearchService):
         return documents
 
 
+class SerperDevSearch(WebSearchService):
+    """Serper.dev 웹 검색"""
+
+    def __init__(self):
+        self.api_key = os.getenv("SERPER_API_KEY")
+
+    def search(self, query: str, max_results: int = 5) -> List[Document]:
+        """Serper.dev 검색"""
+        print(f"[SerperSearch] 검색 쿼리: {query}")
+
+        if not self.api_key:
+            print("   Serper API 키 없음")
+            return [Document(
+                page_content="Serper API 키가 필요합니다.",
+                metadata={"source": "config_error"}
+            )]
+
+        try:
+            url = "https://google.serper.dev/search"
+            headers = {
+                "X-API-KEY": self.api_key,
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "q": f"{query} 레시피 재료",
+                "gl": "kr",
+                "hl": "ko",
+                "num": max_results
+            }
+
+            response = requests.post(url, headers=headers, json=payload, timeout=10)
+
+            if response.status_code == 200:
+                data = response.json()
+                organic = data.get("organic", [])
+                print(f"   검색 성공: {len(organic)}개")
+                return self._format_results(organic[:max_results])
+
+            elif response.status_code == 429:
+                print("   API 호출 제한 초과")
+                return [Document(
+                    page_content="API 호출 제한을 초과했습니다.",
+                    metadata={"source": "rate_limit"}
+                )]
+
+            else:
+                print(f"   API 에러: {response.status_code}")
+                return [Document(
+                    page_content=f"검색 중 오류: {response.status_code}",
+                    metadata={"source": "api_error"}
+                )]
+
+        except Exception as e:
+            print(f"   검색 실패: {e}")
+            return [Document(
+                page_content=f"검색 중 오류: {str(e)}",
+                metadata={"source": "exception"}
+            )]
+
+    def _format_results(self, items: List[Dict]) -> List[Document]:
+        """검색 결과 포맷팅"""
+        documents = []
+
+        for i, item in enumerate(items, 1):
+            title = item.get("title", "")
+            snippet = item.get("snippet", "")
+            link = item.get("link", "")
+
+            content = f"[검색 결과 {i}]\n제목: {title}\n\n내용:\n{snippet}\n\n링크: {link}"
+
+            documents.append(Document(
+                page_content=content,
+                metadata={
+                    "source": "serper_dev",
+                    "title": title,
+                    "link": link
+                }
+            ))
+
+        return documents
+
+
 # 검색 엔진 팩토리
-def get_search_service(engine: str = "naver") -> WebSearchService:
+def get_search_service(engine: str = "serper") -> WebSearchService:
     """검색 엔진 선택"""
     engines = {
         "naver": NaverBlogSearch,
-        "google": GoogleCustomSearch
+        "google": GoogleCustomSearch,
+        "serper": SerperDevSearch
     }
-    
+
     engine_class = engines.get(engine.lower())
     if not engine_class:
         print(f"   지원하지 않는 검색 엔진: {engine}")
-        return NaverBlogSearch()  # 기본값
-    
+        return SerperDevSearch()  # 기본값
+
     return engine_class()
